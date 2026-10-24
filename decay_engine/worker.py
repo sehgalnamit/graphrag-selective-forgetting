@@ -22,6 +22,7 @@ from app.vector_store import VectorStore
 from decay_engine.audit_log import AuditLog
 from decay_engine.pruning import PruneConfig, process_node
 from evaluator.human_review import HumanReviewQueue
+from evaluator.jev_gate import JevClient
 from evaluator.jury import Jury
 
 logger = logging.getLogger(__name__)
@@ -37,6 +38,7 @@ class DecayWorker:
         config: PruneConfig,
         jury: Jury | None = None,
         human_review_queue: HumanReviewQueue | None = None,
+        jev_client: JevClient | None = None,
         now_fn: Callable[[], datetime] | None = None,
     ) -> None:
         self.graph_store = graph_store
@@ -45,6 +47,7 @@ class DecayWorker:
         self.config = config
         self.jury = jury
         self.human_review_queue = human_review_queue
+        self.jev_client = jev_client
         self._now_fn = now_fn or default_clock.now
 
     def run_once(self, tenant_ids: list[str]) -> dict[str, Counter]:
@@ -66,6 +69,7 @@ class DecayWorker:
                     config=self.config,
                     jury=self.jury,
                     human_review_queue=self.human_review_queue,
+                    jev_client=self.jev_client,
                 )
                 counter[outcome] += 1
             results[tenant_id] = counter

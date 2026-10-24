@@ -36,6 +36,15 @@ _COMPLIANCE_KEYWORDS = (
 _TOKEN_RE = re.compile(r"[a-z0-9]+")
 
 
+def looks_compliance_sensitive(text: str) -> bool:
+    """Lightweight, explainable heuristic flagging compliance/legal-relevant
+    text. Used by :class:`ComplianceOverrideJudge` below, and reused by
+    ``decay_engine.pruning`` as the "high-stakes" signal for
+    :class:`evaluator.jev_gate.ConfidenceGatedCascade` (compliance-flagged
+    items are escalated to the jury even when Jev itself is confident)."""
+    return any(keyword in text.lower() for keyword in _COMPLIANCE_KEYWORDS)
+
+
 class Judge(Protocol):
     name: str
 
@@ -115,8 +124,8 @@ class ComplianceOverrideJudge:
     name = "compliance_override_judge"
 
     def evaluate(self, case: dict[str, Any], allowed_verdicts: list[str]) -> Verdict:
-        text = str(case.get("text", "")).lower()
-        if any(keyword in text for keyword in _COMPLIANCE_KEYWORDS):
+        text = str(case.get("text", ""))
+        if looks_compliance_sensitive(text):
             return Verdict(
                 judge_name=self.name,
                 verdict="keep",

@@ -18,8 +18,15 @@ sentence-transformers==3.3.1
 # Optional NLP entity extraction (falls back to regex heuristics if absent)
 spacy==3.8.2
 
-# HTTP client used by the optional Ollama jury judge
+# HTTP client used by the optional Ollama jury judge and TypeSafeJevClient
 httpx==0.28.1
+
+# Optional: the official TypeSafe Jev SDK (https://docs.typesafe.ai/introduction).
+# NOT required - evaluator/jev_gate.py's TypeSafeJevClient calls the same
+# documented REST endpoint directly via httpx above. Install this only if
+# you prefer the official `from typesafe_sdk import Choice, Noul, Score,
+# TypeSafeClient` request helpers instead.
+# typesafe-sdk
 
 # Utilities
 python-dotenv==1.0.1

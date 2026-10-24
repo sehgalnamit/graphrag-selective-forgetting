@@ -23,6 +23,7 @@ from decay_engine.audit_log import AuditLog
 from decay_engine.pruning import PruneConfig
 from decay_engine.worker import DecayWorker
 from evaluator.human_review import HumanReviewQueue
+from evaluator.jev_gate import JevClient, LocalJevStandIn, TypeSafeJevClient, typesafe_available
 from evaluator.jury import build_default_jury
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -50,6 +51,25 @@ def build_worker() -> tuple[DecayWorker, list[str]]:
     human_review_queue = HumanReviewQueue(settings.audit_db_path if not settings.use_fake_stores else ":memory:")
     jury = build_default_jury(settings) if settings.jury_gate_enabled else None
 
+    jev_client: JevClient | None = None
+    if settings.jev_gate_enabled:
+        if typesafe_available():
+            try:
+                jev_client = TypeSafeJevClient(model=settings.jev_model)
+                logger.info("Using TypeSafeJevClient (TYPESAFE_API_KEY is set) as the fast forget-vs-keep gate.")
+            except Exception:
+                logger.exception(
+                    "TYPESAFE_API_KEY is set but TypeSafeJevClient construction failed; "
+                    "falling back to LocalJevStandIn."
+                )
+                jev_client = LocalJevStandIn()
+        else:
+            logger.info(
+                "TYPESAFE_API_KEY not set; using LocalJevStandIn (offline, contract-compatible stand-in, "
+                "NOT the real trained Jev model) as the fast forget-vs-keep gate."
+            )
+            jev_client = LocalJevStandIn()
+
     config = PruneConfig(
         half_life_hours=settings.decay_half_life_hours,
         reinforcement_factor=settings.decay_reinforcement_factor,
@@ -58,6 +78,8 @@ def build_worker() -> tuple[DecayWorker, list[str]]:
         grace_period_hours=settings.prune_grace_period_hours,
         jury_borderline_margin=settings.jury_borderline_margin,
         jury_gate_enabled=settings.jury_gate_enabled,
+        jev_ambiguous_low=settings.jev_ambiguous_low,
+        jev_ambiguous_high=settings.jev_ambiguous_high,
     )
 
     worker = DecayWorker(
@@ -67,6 +89,7 @@ def build_worker() -> tuple[DecayWorker, list[str]]:
         config=config,
         jury=jury,
         human_review_queue=human_review_queue,
+        jev_client=jev_client,
     )
     tenant_ids = [t.strip() for t in os.environ.get("DECAY_TENANT_IDS", "demo").split(",") if t.strip()]
     return worker, tenant_ids

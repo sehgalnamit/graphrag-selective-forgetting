@@ -25,6 +25,8 @@ class AuditAction:
     REINFORCEMENT = "reinforcement"
     DECAY_RECOMPUTED = "decay_recomputed"
     DECAY_MARKED = "decay_marked"
+    JEV_GATE_DECISION = "jev_gate_decision"
+    JEV_KEPT = "jev_kept"
     JURY_REVIEW_REQUESTED = "jury_review_requested"
     JURY_KEPT = "jury_kept"
     JURY_CONFIRMED_FORGET = "jury_confirmed_forget"

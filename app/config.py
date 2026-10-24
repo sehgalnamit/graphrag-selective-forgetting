@@ -55,6 +55,16 @@ class Settings(BaseSettings):
     jury_borderline_margin: float = 0.05
     jury_gate_enabled: bool = True
 
+    # --- TypeSafe Jev (System One model) confidence-gated routing ---
+    # See evaluator/jev_gate.py. TYPESAFE_API_KEY is read directly from the
+    # environment by TypeSafeJevClient (not duplicated here) so it never
+    # ends up logged via Settings' repr(); this field only toggles the
+    # feature and tunes the ambiguous-noul escalation band.
+    jev_gate_enabled: bool = True
+    jev_model: str = "jev-latest"
+    jev_ambiguous_low: float = 0.35
+    jev_ambiguous_high: float = 0.65
+
     # --- jury evaluator ---
     jury_panel_size: int = 3
     jury_abstain_margin: float = 0.15
