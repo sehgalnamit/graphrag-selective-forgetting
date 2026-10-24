@@ -45,6 +45,13 @@
 4. **Secrets**: pass `neo4j_password` / `qdrant_cloud_api_key` via
    `TF_VAR_neo4j_password` / a CI secret store, never commit real values
    into `terraform.tfvars`.
+5. **Optional: TypeSafe Jev** (`evaluator/jev_gate.py`). If you want the
+   decay-engine worker to call the real hosted Jev model instead of the
+   offline `LocalJevStandIn` stand-in, add a `google_secret_manager_secret`
+   for `TYPESAFE_API_KEY` (same pattern as `neo4j_password` in `main.tf`)
+   and reference it as a secret-backed env var on the `decay_engine` Cloud
+   Run service - this template does not do so by default, since no key
+   was available while building this repo.
 
 ## Deploying (what you would run)
 

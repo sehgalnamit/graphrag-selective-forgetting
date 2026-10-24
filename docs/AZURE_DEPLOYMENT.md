@@ -50,6 +50,13 @@
 4. **Secrets**: never pass `neo4jPassword` as a plain CLI literal in a
    shared shell history/CI log in real usage - use a pipeline secret
    variable or `az keyvault secret show` piping instead.
+5. **Optional: TypeSafe Jev** (`evaluator/jev_gate.py`). If you want the
+   decay-engine worker to call the real hosted Jev model instead of the
+   offline `LocalJevStandIn` stand-in, add a `TYPESAFE_API_KEY` secret to
+   the Key Vault module (same pattern as `neo4j-password`) and reference
+   it as a `TYPESAFE_API_KEY` env var/secretRef on the `decay-engine`
+   Container App - this template does not do so by default, since no key
+   was available while building this repo.
 
 ## Deploying (what you would run)
 

@@ -15,7 +15,9 @@ GDPR-style **right-to-be-forgotten** purge API handles explicit,
 immediate erasure requests completely independently of the decay engine.
 An **LLM-jury** (panel-of-judges) module adjudicates the borderline
 "forget vs. keep" cases the decay engine isn't confident about, and
-validates retrieval relevance quality.
+validates retrieval relevance quality - gated behind a fast, cheap
+**TypeSafe Jev** confidence check (Confidence-Gated Routing) so the jury
+is only invoked for the ambiguous or high-stakes minority of decisions.
 
 This repository is a runnable, test-covered demo of that idea - not a
 production system. See [Design decisions & honest limitations](#design-decisions--honest-limitations)
@@ -66,8 +68,9 @@ flowchart LR
         PURGE[GDPR purge<br/>immediate, bypasses decay]
     end
 
-    subgraph Jury["LLM-Jury Evaluator (evaluator/)"]
-        PANEL[Panel of judges]
+    subgraph Eval["Evaluator (evaluator/)"]
+        JEV["TypeSafe Jev gate<br/>fast/cheap Noul question"]
+        PANEL[LLM-Jury panel of judges]
         AGG[Aggregator<br/>majority / confidence-weighted]
         HR[(Human review queue)]
     end
@@ -94,7 +97,9 @@ flowchart LR
     WORKER --> NEO
     WORKER --> PRUNE
     PRUNE --> QD
-    PRUNE -->|borderline case| PANEL
+    PRUNE -->|forget-candidate| JEV
+    JEV -->|confident| PRUNE
+    JEV -->|ambiguous/high-stakes| PANEL
     PANEL --> AGG
     AGG -->|escalate| HR
     PRUNE --> AUDIT
@@ -170,10 +175,13 @@ flowchart TD
     COMPUTE --> AUDIT2[(Audit: decay_recomputed)]
     AUDIT2 --> PINCHK{pinned OR<br/>decay_score >= threshold?}
     PINCHK -->|Yes| KEEP[active_above_threshold]
-    PINCHK -->|No| BORDER{Within jury<br/>borderline margin?}
-    BORDER -->|No| MARK[Mark for deletion]
-    BORDER -->|Yes, jury gate on| JURY[Consult jury panel]
-    JURY --> VERDICT{Verdict}
+    PINCHK -->|No| JEVASK["Ask Jev: should this<br/>be forgotten? (Noul)"]
+    JEVASK --> AUDIT6[(Audit: jev_gate_decision)]
+    AUDIT6 --> JEVCONF{Confident &<br/>not high-stakes?}
+    JEVCONF -->|Yes, forget| MARK[Mark for deletion]
+    JEVCONF -->|Yes, keep| AUDIT7[(Audit: jev_kept)]
+    JEVCONF -->|No - ambiguous or<br/>high-stakes| JURY[Escalate to jury panel]
+    JURY --> VERDICT{Jury verdict}
     VERDICT -->|keep| AUDIT3[(Audit: jury_kept)]
     VERDICT -->|forget| MARK
     VERDICT -->|abstain| ESCALATE[Enqueue human review]
@@ -184,6 +192,7 @@ flowchart TD
     AUDIT3 --> END
     AUDIT4 --> END
     AUDIT5 --> END
+    AUDIT7 --> END
     SKIP1 --> END
     KEEP --> END
 ```
@@ -286,14 +295,19 @@ A suggested walkthrough for showcasing this repository end-to-end:
    direct `sqlite3 data/audit_log.sqlite3 "select * from audit_log"`).
 6. **Show retrieval quality before/after forgetting**: re-run the same
    query before and after the prune event and compare `chunks` returned.
-7. **Show the jury flagging a borderline decision**: pick
-   `prune_threshold`/`jury_borderline_margin` so a node lands in the
-   borderline band; show the `audit_log` rows
-   `jury_review_requested` -> `jury_escalated` (or `jury_kept` /
-   `jury_confirmed_forget`), and, if escalated, the row appearing in the
-   `human_review_queue` table.
-8. **Show the GDPR purge path** acting immediately on a *pinned* node,
-   contrasting it with the multi-step decay/prune flow above.
+7. **Show the Jev fast gate acting alone** on a routine, clearly-stale
+   chunk: `jev_gate_decision` in the audit log with
+   `acted_automatically=true` and no `jury_review_requested` entry for
+   that node - the efficiency case.
+8. **Show the cascade escalating to the jury**: pick `prune_threshold`/
+   `jev_ambiguous_low`/`jev_ambiguous_high` so a node's Jev Noul answer
+   lands in the ambiguous band (or use a `pinned`/compliance-worded
+   chunk, which always escalates); show the `audit_log` rows
+   `jev_gate_decision` -> `jury_review_requested` -> `jury_escalated` (or
+   `jury_kept` / `jury_confirmed_forget`), and, if escalated, the row
+   appearing in the `human_review_queue` table.
+9. **Show the GDPR purge path** acting immediately on a *pinned* node,
+   contrasting it with the multi-step decay/prune/cascade flow above.
 
 ---
 
@@ -318,6 +332,7 @@ demo, and what a production build would need instead:
 | Embeddings | `sentence-transformers` if installed, else a deterministic hashing embedder with **no semantic understanding** | A properly evaluated, production-grade embedding model/API |
 | Entity/relation extraction | spaCy if installed, else a small regex heuristic (capitalized phrases + ~7 lexical relation patterns) | A real NER/RE pipeline or an LLM-based extractor |
 | Jury judges | Deterministic rule-based stub judges (by design, for CI determinism) + an optional Ollama-backed example | A real multi-model panel (small local models via Ollama, or a mix of providers), tuned and evaluated on your data |
+| TypeSafe Jev gate | `LocalJevStandIn` - a deterministic, fully offline, contract-compatible stand-in (**not** the real trained model) | `TypeSafeJevClient`, implemented against the real documented REST API (https://docs.typesafe.ai/introduction) but **not exercised against a live key**: `TYPESAFE_API_KEY` was not available in this build environment, so only `LocalJevStandIn` was ever actually called in tests. Set `TYPESAFE_API_KEY` to switch over - no code changes needed. |
 | Neo4j tenancy | Single database, `tenant_id` property partition (Community Edition compatible) | True database-per-tenant (Enterprise/AuraDB), see `app/tenancy.py` |
 | Audit log | SQLite, single writer | Postgres (or similar) for multi-writer durability at scale |
 | Docker validation | YAML-parsed only; **`docker compose up` was not run** (no Docker available in the build environment) | Verify in a real Docker environment before relying on it |
@@ -347,10 +362,107 @@ equal elapsed time and access count.
 ## The LLM-Jury evaluator
 
 Implemented in [`evaluator/`](evaluator/) (`jury.py`, `judges.py`,
-`schemas.py`, `human_review.py`) and designed to be reusable - the module
-has no dependency on the rest of this repo beyond `pydantic` (and
-optionally `httpx` for the Ollama example judge), so it is meant to be
-copy-pasted into sibling projects as-is.
+`jev_gate.py`, `schemas.py`, `human_review.py`) and designed to be
+reusable - the module has no dependency on the rest of this repo beyond
+`pydantic` (and optionally `httpx` for the Ollama example judge /
+`TypeSafeJevClient`), so it is meant to be copy-pasted into sibling
+projects as-is.
+
+### The full cascade: Jev fast gate -> Confidence-Gated Routing -> jury appeals court
+
+Forget-vs-keep decisions in the decay engine now go through a two-tier
+cascade rather than invoking the jury on every borderline case:
+
+```mermaid
+flowchart TD
+    N[Forget-candidate node<br/>decay_score < prune_threshold, not pinned] --> ASK["Ask TypeSafe Jev a Noul question<br/>(fast, cheap, single probability)"]
+    ASK --> CONF{"Confidence check<br/>(distance from 0.5)"}
+    CONF -->|"high confidence,<br/>not high-stakes"| AUTO["Act automatically on Jev's verdict<br/>(mark for deletion, or leave active)"]
+    CONF -->|"ambiguous (noul in<br/>ambiguous_band) OR<br/>high-stakes (pinned/<br/>compliance-flagged)"| JURY["Escalate to LLM-Jury panel<br/>(evaluator/jury.py)"]
+    JURY --> JVERDICT{Jury verdict}
+    JVERDICT -->|keep| KEEP[Node stays active]
+    JVERDICT -->|forget| MARK[Mark for deletion]
+    JVERDICT -->|abstain| HR[Enqueue human review<br/>node stays active]
+    AUTO --> AUDIT[(Audit log:<br/>jev_gate_decision)]
+    KEEP --> AUDIT2[(Audit log:<br/>jury_review_requested -> jury_kept)]
+    MARK --> AUDIT3[(Audit log:<br/>jury_review_requested -> jury_confirmed_forget)]
+    HR --> AUDIT4[(Audit log:<br/>jury_review_requested -> jury_escalated)]
+```
+
+This is TypeSafe's own documented **"Confidence-Gated Routing"** pattern
+(https://docs.typesafe.ai/patterns/confidence-routing): confidence is a
+*second* decision axis alongside the verdict itself - in TypeSafe's words,
+*"a confidence threshold is not one number... different actions [are]
+gated at different levels depending on the consequences of getting it
+wrong."* Concretely:
+
+* **High confidence** (Jev's Noul answer is clearly away from 0.5, and the
+  item isn't high-stakes) -> act automatically on Jev's answer. This is
+  the large majority of routine decay sweeps.
+* **Medium/low confidence** (the Noul answer falls in a configurable
+  ambiguous band, default `0.35-0.65`) **or a high-stakes item** (pinned /
+  compliance-flagged text) -> escalate to the existing LLM-jury panel for
+  a slower, more deliberate second opinion. If the jury itself can't reach
+  consensus, the case is enqueued to the human-review queue exactly as
+  before.
+
+#### Real TypeSafe Jev contract (verified against the live docs - nothing below is invented)
+
+* REST: `POST https://api.typesafe.ai/v1/systemone`, `Authorization: Bearer <TYPESAFE_API_KEY>`.
+* Three typed primitives - **Noul** (yes/no probability, no separate
+  confidence field: distance from 0.5 *is* the confidence signal),
+  **Choice** (pick one of an unordered set), **Score** (an ordered
+  rubric). See `evaluator/jev_gate.py` for the full Pydantic contracts.
+* Documented confidence formulas (implemented exactly, and unit-tested
+  against the worked examples in the docs):
+  `choice_confidence = (n * p_max - 1) / (n - 1)`;
+  `score = sum(k * p_k for k in 0..n-1)`;
+  `score_confidence = max(0, 1 - MAD(p) / MAD(uniform))`.
+* Official SDK: `pip install typesafe-sdk` (`from typesafe_sdk import
+  Choice, Noul, Score, TypeSafeClient`) - listed as an **optional**
+  dependency in `requirements.txt`; this repo's `TypeSafeJevClient` calls
+  the same REST contract directly via `httpx` instead, so the SDK is never
+  a hard requirement.
+* Sources: https://typesafe.ai/ , https://docs.typesafe.ai/introduction ,
+  https://docs.typesafe.ai/confidence ,
+  https://docs.typesafe.ai/patterns/confidence-routing , and DeepEval's
+  real `JevEval` integration (`JevEval = Σ(w_i·v_i) / Σ(w_i)`, a weighted
+  combination of typed-question answers) at
+  https://deepeval.com/blog/introducing-jev-as-a-judge - cited here as the
+  inspiration for combining multiple judge/question outputs, which is
+  exactly what `evaluator.jury.Jury`'s confidence-weighted aggregation
+  already does one layer up in this repo.
+* **Caveat on performance claims**: TypeSafe describes Jev as dramatically
+  faster/cheaper than frontier LLMs on their own workflows (they cite
+  multipliers in the tens-to-hundreds-x range). That is **TypeSafe's own,
+  unverified-by-us claim** on their own benchmarks, not something measured
+  or repeated as fact in this repo.
+
+#### `LocalJevStandIn` vs. `TypeSafeJevClient`
+
+`evaluator.jev_gate.LocalJevStandIn` is a deterministic, fully offline
+stand-in implementing the *identical* typed primitives, response shapes,
+and confidence formulas as the real API - computed from simple rule-based
+heuristics (a logistic curve centered on `prune_threshold`) instead of a
+trained model. It is clearly docstring-labeled as **not the real Jev
+model**. `decay_engine/service.py` automatically uses
+`TypeSafeJevClient(model=settings.jev_model)` when `TYPESAFE_API_KEY` is
+set, and falls back to `LocalJevStandIn` otherwise - swapping between them
+requires zero code changes anywhere that depends on the `JevClient`
+protocol.
+
+#### When to use which
+
+| Scenario | Recommended path |
+|---|---|
+| Routine, high-volume decay sweeps over typical (non-pinned, non-compliance) content | Jev alone (fast/cheap default) |
+| Jev's Noul answer lands in the ambiguous band (default `0.35-0.65`) | Jev + Jury (escalated) |
+| Pinned / compliance-flagged content that somehow reaches the gate | Jev + Jury (escalated regardless of Jev's confidence) |
+| Jury itself can't reach consensus | Jev + Jury + human review queue |
+| Retrieval relevance scoring (`/query`'s `jury_relevance_verdict`) | Jury only (no Jev involvement - advisory, not safety-critical) |
+| CI / no `TYPESAFE_API_KEY` available | `LocalJevStandIn` automatically (no config needed) |
+
+### The jury panel itself
 
 **Design, honestly stated:** a single "LLM-as-judge" call is sensitive to
 that one model's particular biases and prompt sensitivity. Polling a
@@ -380,10 +492,13 @@ within `abstain_margin` of each other - i.e. when the panel meaningfully
 disagrees rather than just splitting by noise.
 
 Two concrete use sites in this repo:
-1. **Decay-engine pruning gate** (`decay_engine/pruning.py`): when a
-   node's `decay_score` is within `jury_borderline_margin` of
-   `prune_threshold` and it isn't `pinned`, the jury is consulted before
-   marking it for deletion.
+1. **Decay-engine pruning gate** (`decay_engine/pruning.py`): the jury is
+   now the *escalation* path behind the Jev fast gate described above -
+   consulted only when Jev's Noul answer is ambiguous or the item is
+   high-stakes, not on every borderline-by-`decay_score` case as before.
+   (The original direct jury-only gate, gated purely by
+   `jury_borderline_margin`, is preserved unchanged for backward
+   compatibility when no `jev_client` is supplied.)
 2. **Retrieval relevance check** (`app/main.py`'s `/query` endpoint): a
    small relevance-focused jury (`evaluator.jury.build_relevance_jury`)
    scores the top retrieved chunk against the query, attached to the
@@ -428,18 +543,20 @@ pytest -v
 ruff check .
 ```
 
-The full suite (decay formula, two-phase pruning incl. the jury gate,
-jury aggregation, GDPR purge, ingestion helpers, FastAPI endpoints) runs
-against the in-memory fake Neo4j/Qdrant adapters - **no Docker, network
-access, or API keys are required**. CI (`.github/workflows/ci.yml`) runs
-`ruff check .` and `pytest` on every push/PR against Python 3.11.
+The full suite (decay formula, two-phase pruning incl. the Jev/jury
+cascade, jury aggregation, TypeSafe Jev confidence-formula spec checks,
+cascade routing, GDPR purge, ingestion helpers, FastAPI endpoints) runs
+against the in-memory fake Neo4j/Qdrant adapters and `LocalJevStandIn` -
+**no Docker, network access, or API keys are required**. CI
+(`.github/workflows/ci.yml`) runs `ruff check .` and `pytest` on every
+push/PR against Python 3.11.
 
 ## Repository layout
 
 ```
 app/              FastAPI ingestion + hybrid retrieval service
 decay_engine/     Ebbinghaus decay formula, two-phase pruning, GDPR purge, audit log, worker/service
-evaluator/        Reusable LLM-jury panel-of-judges module
+evaluator/        Reusable LLM-jury panel-of-judges module + TypeSafe Jev confidence-gated routing cascade
 tests/            pytest suite (zero external dependencies)
 deployment/azure/ Bicep IaC (reference only, not applied)
 deployment/gcp/   Terraform IaC (reference only, not applied)

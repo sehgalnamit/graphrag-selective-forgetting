@@ -99,6 +99,14 @@ services:
       PRUNE_THRESHOLD: "0.15"
       PRUNE_GRACE_PERIOD_HOURS: "24"
       DECAY_TENANT_IDS: "demo"
+      JEV_GATE_ENABLED: "true"
+      JEV_MODEL: "jev-latest"
+      JEV_AMBIGUOUS_LOW: "0.35"
+      JEV_AMBIGUOUS_HIGH: "0.65"
+      # Optional: set on the host to use the real hosted TypeSafe Jev model
+      # (evaluator/jev_gate.py's TypeSafeJevClient) instead of the offline
+      # LocalJevStandIn stand-in. Left unset by default.
+      TYPESAFE_API_KEY: "${TYPESAFE_API_KEY:-}"
     volumes:
       - audit_data:/data
     depends_on:
