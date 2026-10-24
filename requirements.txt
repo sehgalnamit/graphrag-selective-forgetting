@@ -1,0 +1,31 @@
+# Core API
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+pydantic==2.10.4
+pydantic-settings==2.7.1
+
+# Graph + vector store clients
+neo4j==5.27.0
+qdrant-client==1.12.1
+
+# Background scheduling
+apscheduler==3.11.0
+
+# Optional embeddings (real model). Code falls back to a deterministic
+# hashing embedder automatically if this import is unavailable.
+sentence-transformers==3.3.1
+
+# Optional NLP entity extraction (falls back to regex heuristics if absent)
+spacy==3.8.2
+
+# HTTP client used by the optional Ollama jury judge
+httpx==0.28.1
+
+# Utilities
+python-dotenv==1.0.1
+numpy==2.2.1
+
+# Testing / lint (dev)
+pytest==8.3.4
+pytest-asyncio==0.25.0
+ruff==0.8.4

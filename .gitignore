@@ -1,0 +1,49 @@
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# virtual envs
+.venv/
+venv/
+env/
+.uv/
+
+# env files
+.env
+*.local.env
+
+# sqlite / data
+*.db
+*.sqlite3
+data/
+qdrant_storage/
+neo4j_data/
+neo4j_logs/
+
+# test / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# terraform
+**/.terraform/
+**/*.tfstate
+**/*.tfstate.*
+**/.terraform.lock.hcl
+
+# logs
+*.log

@@ -1,0 +1,20 @@
+[project]
+name = "graphrag-selective-forgetting"
+version = "0.1.0"
+description = "Enterprise knowledge retrieval with neuro-inspired memory decay and active graph pruning."
+requires-python = ">=3.11"
+
+[tool.ruff]
+line-length = 110
+target-version = "py311"
+exclude = ["deployment", ".venv", "venv"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "UP"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
