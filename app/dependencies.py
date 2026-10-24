@@ -31,7 +31,7 @@ def get_graph_store() -> GraphStore:
         settings.neo4j_uri,
         settings.neo4j_user,
         settings.neo4j_password,
-        multi_db_enabled=False,
+        multi_db_enabled=settings.neo4j_multi_db_enabled,
     )
 
 

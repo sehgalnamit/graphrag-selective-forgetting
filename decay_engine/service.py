@@ -38,7 +38,12 @@ def build_worker() -> tuple[DecayWorker, list[str]]:
         graph_store = InMemoryGraphStore()
         vector_store = InMemoryVectorStore()
     else:
-        graph_store = Neo4jGraphStore(settings.neo4j_uri, settings.neo4j_user, settings.neo4j_password)
+        graph_store = Neo4jGraphStore(
+            settings.neo4j_uri,
+            settings.neo4j_user,
+            settings.neo4j_password,
+            multi_db_enabled=settings.neo4j_multi_db_enabled,
+        )
         vector_store = QdrantVectorStore(settings.qdrant_url, settings.qdrant_api_key)
 
     audit_log = AuditLog(settings.audit_db_path if not settings.use_fake_stores else ":memory:")

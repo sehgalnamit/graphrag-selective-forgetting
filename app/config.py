@@ -25,6 +25,10 @@ class Settings(BaseSettings):
     neo4j_uri: str = "bolt://localhost:7687"
     neo4j_user: str = "neo4j"
     neo4j_password: str = "please-change-me"
+    # See app/tenancy.py: true database-per-tenant requires Neo4j
+    # Enterprise/AuraDB multi-database support. Off by default so this
+    # works against the Community Edition image in docker-compose.
+    neo4j_multi_db_enabled: bool = False
 
     qdrant_url: str = "http://localhost:6333"
     qdrant_api_key: str | None = None
