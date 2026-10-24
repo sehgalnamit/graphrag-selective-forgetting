@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11"]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          # Install everything in requirements.txt. If the optional heavy
+          # ML extras (sentence-transformers / spacy) fail to build on a
+          # given runner, fall back to the core dependency set only - the
+          # application and test suite both gracefully degrade to the
+          # deterministic fallback implementations in that case.
+          pip install -r requirements.txt || pip install \
+            fastapi uvicorn[standard] pydantic pydantic-settings \
+            neo4j qdrant-client apscheduler httpx python-dotenv numpy \
+            pytest pytest-asyncio ruff
+
+      - name: Lint with ruff
+        run: ruff check .
+
+      - name: Run pytest
+        run: pytest -v
+
+      - name: Validate docker-compose syntax
+        run: |
+          python -c "import yaml; yaml.safe_load(open('docker-compose.yml'))"

@@ -1,0 +1,20 @@
+FROM python:3.11-slim AS base
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
+
+WORKDIR /srv
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt || \
+    pip install --no-cache-dir \
+        fastapi uvicorn[standard] pydantic pydantic-settings \
+        neo4j qdrant-client apscheduler httpx python-dotenv numpy \
+        pytest pytest-asyncio ruff
+
+COPY app ./app
+COPY decay_engine ./decay_engine
+COPY evaluator ./evaluator
+
+CMD ["python", "-m", "decay_engine.service"]
