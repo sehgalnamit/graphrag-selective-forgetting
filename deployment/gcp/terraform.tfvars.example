@@ -1,0 +1,14 @@
+project_id          = "my-gcp-project-id"
+region              = "us-central1"
+app_image           = "us-central1-docker.pkg.dev/my-gcp-project-id/grsf/app:latest"
+decay_engine_image  = "us-central1-docker.pkg.dev/my-gcp-project-id/grsf/decay:latest"
+neo4j_uri           = "neo4j+s://CHANGE-ME.databases.neo4j.io:7687"
+# Prefer passing this via TF_VAR_neo4j_password or a secret-manager-backed
+# CI variable instead of committing it here.
+neo4j_password      = "REPLACE_ME_AT_DEPLOY_TIME"
+
+# "gke" provisions a minimal GKE Autopilot cluster + VPC connector running
+# Qdrant yourself; "cloud" skips all of that and just points at Qdrant Cloud.
+qdrant_mode           = "cloud"
+qdrant_cloud_url      = "https://xxxxx.us-east4-0.gcp.cloud.qdrant.io:6333"
+qdrant_cloud_api_key  = "REPLACE_ME_AT_DEPLOY_TIME"
